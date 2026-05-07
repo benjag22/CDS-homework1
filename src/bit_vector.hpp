@@ -1,57 +1,91 @@
 #pragma once
-#include <vector>
-#include <cstdint>
-#include "util.hpp"
 
-class bitVector {
-    static constexpr int BITS = 32; // bits for block
-    std::vector<uint32_t> vec;      // blocks of 32 bits
-    std::vector<uint32_t> count;    // prefix of 1's for block
+#include <cstdint>
+#include <vector>
+
+#define POPCNT(x) __builtin_popcountll(x)
+
+class bit_vector {
+    static constexpr uint64_t S = 512;
+    static constexpr uint64_t B = 128;
+    static constexpr uint64_t ONE = std::numeric_limits<uint64_t>::max();
+
+    const uint64_t m_size;
+    std::vector<uint64_t> m_bit_array;
+    std::vector<uint16_t> m_blocks;
+    std::vector<uint64_t> m_super_blocks;
 
 public:
-    bitVector() = default;
-
-    explicit bitVector(const uint32_t n) {
-        resize(n);
+    explicit bit_vector(const uint64_t size, const uint8_t default_value = 0)
+        : m_size(size),
+          m_bit_array((size + 63) / 64, default_value == 0 ? 0 : ONE),
+          m_blocks((size + B - 1) / B, 0),
+          m_super_blocks((size + S - 1) / S, 0) {
     }
 
-    void resize(const uint32_t n) {
-        const uint32_t blocks = (n + BITS - 1) / BITS;
-        vec.assign(blocks, 0);
-        count.assign(blocks, 0);
-    }
-
-    void set(const uint32_t i) {
-        vec[i / BITS] |= (1u << (i % BITS));
+    explicit bit_vector(const std::vector<uint64_t> &bit_array)
+        : m_size(bit_array.size() * 64),
+          m_bit_array(bit_array),
+          m_blocks((m_size + B - 1) / B, 0),
+          m_super_blocks((m_size + S - 1) / S, 0) {
+        build_rank();
     }
 
     void build_rank() {
-        count[0] = 0;
-        for (uint32_t i = 1; i < vec.size(); ++i) {
-            count[i] = count[i - 1] + popcnt(vec[i - 1]);
+        uint64_t si = 1, bi = 1, s_count = 0, b_count = 0, offset = 0;
+
+        for (uint64_t const &num: m_bit_array) {
+            const uint8_t count = POPCNT(num);
+
+            offset += 64;
+            s_count += count;
+            b_count += count;
+
+            if (offset % S == 0) {
+                m_super_blocks[si++] = s_count;
+                b_count = 0;
+            }
+
+            if (offset % B == 0) {
+                m_blocks[bi++] = b_count;
+            }
         }
     }
-    [[nodiscard]] uint32_t access(const uint32_t i) const {
-        return (vec[i / BITS] >> (i % BITS)) & 1u;
+
+    [[nodiscard]] uint64_t size() const {
+        return m_size;
     }
 
-    [[nodiscard]] uint32_t rank_1(const uint32_t i) const {
-        const uint32_t block = i / BITS;
-        const uint32_t offset = i % BITS;
-        const uint32_t mask = (offset == 31) ? 0xFFFFFFFF : (1u << (offset + 1)) - 1;
-        return count[block] + popcnt(vec[block] & mask);
+    void set(const uint64_t i) {
+        m_bit_array[i / 64] |= 1 << (i % 64);
     }
 
-    [[nodiscard]] uint32_t rank_1(const int i, const int j) const {
+    [[nodiscard]] uint8_t access(const uint64_t i) const {
+        return m_bit_array[i / 64] >> (i % 64) & 1;
+    }
+
+    [[nodiscard]] uint64_t rank_1(const uint64_t i) const {
+        const uint64_t s_count = m_super_blocks[i / S];
+        const uint64_t b_count = m_blocks[i / B];
+        const uint64_t bucket = i / 64;
+        const uint64_t offset = 63 - i % 64;
+        const uint64_t pop_count = POPCNT(m_bit_array[bucket] << offset);
+        uint64_t count = s_count + b_count + pop_count;
+        if (i % B >= 64) {
+            count += POPCNT(m_bit_array[bucket - 1]);
+        }
+        return count;
+    }
+
+    [[nodiscard]] uint64_t rank_1(const uint64_t i, const uint64_t j) const {
         return rank_1(j) - rank_1(i - 1);
     }
 
-    [[nodiscard]] uint32_t rank_0(const int i) const {
-        if (i < 0) return 0;
-        return (i + 1) - rank_1(i);
+    [[nodiscard]] uint64_t rank_0(const uint64_t i) const {
+        return i + 1 - rank_1(i);
     }
 
-    [[nodiscard]] uint32_t rank_0(const int i, const int j) const {
+    [[nodiscard]] uint64_t rank_0(const uint64_t i, const uint64_t j) const {
         return rank_0(j) - rank_0(i - 1);
     }
 };

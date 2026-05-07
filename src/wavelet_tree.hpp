@@ -4,11 +4,10 @@
 #include "bit_vector.hpp"
 
 struct Node {
-    bitVector representation{};
+    bit_vector representation;
     Node* childs[2]{};
 
-    explicit Node(const uint32_t len) {
-        representation.resize(len);
+    explicit Node(const uint32_t len) : representation(len) {
         childs[0] = nullptr;
         childs[1] = nullptr;
     }
