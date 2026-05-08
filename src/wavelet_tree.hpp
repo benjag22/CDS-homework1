@@ -125,6 +125,18 @@ public:
         return pos + 1;
     }
 
+    /**
+     * Get the size of this wavelet_tree in bytes.
+     * @return The size of this wavelet_tree in bytes.
+     */
+    [[nodiscard]] uint64_t size_in_bytes() const {
+        return sizeof(wavelet_tree)
+            - sizeof(bit_vector)
+            + m_bit_vector.size_in_bytes()
+            + m_dict.size() * sizeof(uint8_t)
+            + m_dict_inv.size() * (sizeof(uint8_t) + sizeof(uint8_t));
+    }
+
     [[nodiscard]] bool operator==(const std::vector<uint64_t> &v) const {
         return v == m_bit_vector;
     }

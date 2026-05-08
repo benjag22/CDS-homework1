@@ -58,7 +58,8 @@ public:
      * This is required if you didn't create this bit_vector from a bit array.
      */
     void build_rank() {
-        uint64_t si = 1, bi = 1, s_count = 0, b_count = 0, offset = 0;
+        uint64_t si = 1, bi = 1, s_count = 0, offset = 0;
+        uint16_t b_count = 0;
 
         for (uint64_t const &num: m_bit_array) {
             const uint8_t count = POPCNT(num);
@@ -191,6 +192,17 @@ public:
      */
     [[nodiscard]] uint64_t rank_0(const uint64_t i, const uint64_t j) const {
         return rank_0(j) - rank_0(i - 1);
+    }
+
+    /**
+     * Get the size of this bit_vector in bytes.
+     * @return The size of this bit_vector in bytes.
+     */
+    [[nodiscard]] uint64_t size_in_bytes() const {
+        return sizeof(bit_vector)
+            + m_bit_array.size() * sizeof(uint64_t)
+            + m_blocks.size() * sizeof(uint16_t)
+            + m_super_blocks.size() * sizeof(uint64_t);
     }
 
     [[nodiscard]] bool operator==(const std::vector<uint64_t> &v) const {
