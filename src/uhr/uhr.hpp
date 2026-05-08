@@ -47,10 +47,12 @@ inline void uhr(
         WTType::BRUTE_FORCE,
     };
 
-    const uint64_t total_runs_additive = wt_types.size() * (mult_step
-        ? runs * (static_cast<uint64_t>(std::log(upper / static_cast<double>(lower)) / std::log(step)) + 1)
-        : runs * ((upper - lower) / step + 1)
-    );
+    const uint64_t runs_multiplicative = runs
+        * (static_cast<uint64_t>(std::log(upper / static_cast<double>(lower)) / std::log(step)) + 1);
+    const uint64_t total_runs_additive = (wt_types.size() - 1)
+        * (mult_step ? runs_multiplicative : runs * ((upper - lower) / step + 1))
+        + runs_multiplicative;
+
     std::vector<double> times(runs);
     std::vector<double> q;
     std::chrono::duration<double, std::nano> elapsed_time{};
@@ -61,7 +63,7 @@ inline void uhr(
         "Output file:          " << results_file_path << "\n"
         "Runs per test:        " << runs << "\n"
         "Pattern length range: [" << lower << ", " << upper << "]\n"
-        "Pattern length step:  " << step << (mult_step ? " (multiplicative)" : " (additive)") << "\n"
+        "Pattern length step:  " << step << (mult_step ? " (multiplicative)" : " (additive [mult. for b.f.])") << "\n"
         "Total runs:           " << total_runs_additive << "\n"
         << std::endl;
 
@@ -82,8 +84,9 @@ inline void uhr(
 
     for (const WTType &wt_type: wt_types) {
         const uint64_t memory = fmi.size_in_bytes(wt_type);
+        const bool is_mult = mult_step || wt_type == WTType::BRUTE_FORCE;
 
-        for (uint64_t n = lower; n <= upper; mult_step ? n *= step : n += step) {
+        for (uint64_t n = lower; n <= upper; is_mult ? n *= step : n += step) {
             double mean_time = 0;
             double time_stdev = 0;
 

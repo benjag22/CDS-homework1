@@ -11,7 +11,7 @@ int main(const int argc, const char *const argv[]) {
         / "data"
         / input_file_path.filename().replace_extension(".csv");
 
-    uhr(input_file_path, results_file_path, args.runs, args.lower, args.upper, args.step, true);
+    uhr(input_file_path, results_file_path, args.runs, args.lower, args.upper, args.step, args.mult_step);
 
     return 0;
 }

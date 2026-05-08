@@ -17,7 +17,8 @@ struct ArgValidationResult {
 
 struct Arg {
     const std::string name;
-    const std::string label;
+    const std::string description;
+    const bool flag = false;
     uint64_t value = 0;
     const uint64_t min = std::numeric_limits<uint64_t>::min();
     const uint64_t max = std::numeric_limits<uint64_t>::max();
@@ -34,30 +35,36 @@ struct Arg {
 struct Args {
     Arg runs{
         .name = "-r",
-        .label = "runs",
+        .description = "Number of runs per test case.",
         .value = 32,
         .min = 32,
     };
     Arg lower{
         .name = "-l",
-        .label = "lower",
+        .description = "Lower bound for test cases range.",
         .value = 1,
         .min = 1,
     };
     Arg upper{
         .name = "-u",
-        .label = "upper",
+        .description = "Upper bound for test cases range.",
         .value = 1024,
         .min = 1,
         .validator = [this]() -> ArgValidationResult {
-            return {upper > lower, upper.label + " must be > " + lower.label};
+            return {upper > lower, upper.description + " must be > " + lower.description};
         },
     };
     Arg step{
         .name = "-s",
-        .label = "step",
+        .description = "Step of test cases.",
         .value = 2,
         .min = 1,
+    };
+    Arg mult_step{
+        .name = "-m",
+        .description = "Whether to use multiplicative steps instead of additive.",
+        .flag = true,
+        .value = false,
     };
 
 private:
@@ -67,12 +74,14 @@ private:
         &lower,
         &upper,
         &step,
+        &mult_step,
     };
     const std::unordered_map<std::string, Arg *> m_args_map{
         {runs.name, &runs},
         {lower.name, &lower},
         {upper.name, &upper},
         {step.name, &step},
+        {mult_step.name, &mult_step},
     };
 
 public:
@@ -83,19 +92,29 @@ public:
     [[nodiscard]] std::string usage_string(const std::string &cmd) const {
         std::stringstream ss;
 
+        ss << std::boolalpha;
+
         ss << "Usage: " + cmd + " <text_file_path> [options]\n\n"
             << "Options:\n\n";
 
         for (const auto &arg: m_args_list) {
-            ss << "  " << arg->name << " : " << arg->label << "\n"
-                << "\tdefault: " << arg->value << "\n";
+            ss << "  " << arg->name << " : " << arg->description << "\n"
+                << "       default: ";
+
+            if (arg->flag) {
+                ss << static_cast<bool>(arg->value);
+            } else {
+                ss << arg->value;
+            }
+
+            ss << "\n";
 
             if (arg->min != std::numeric_limits<uint64_t>::min()) {
-                ss << "\tmin: " << arg->min << "\n";
+                ss << "       min: " << arg->min << "\n";
             }
 
             if (arg->max != std::numeric_limits<uint64_t>::max()) {
-                ss << "\tmax: " << arg->max << "\n";
+                ss << "       max: " << arg->max << "\n";
             }
 
             ss << "\n";
@@ -119,13 +138,15 @@ struct ParsedArgs {
     const uint64_t lower;
     const uint64_t upper;
     const uint64_t step;
+    const bool mult_step;
 
     explicit ParsedArgs(const char *text_file_path, const Args &args)
         : text_file_path(text_file_path),
           runs(args.runs.value),
           lower(args.lower.value),
           upper(args.upper.value),
-          step(args.step.value) {
+          step(args.step.value),
+          mult_step(args.mult_step.value) {
     }
 };
 
@@ -141,7 +162,8 @@ inline ParsedArgs parse_args(const int argc, const char *const *const argv) {
 
     const char *text_file_path = argv[1];
 
-    for (int i = 2; i < argc; i += 2) {
+    int i = 2;
+    while (i < argc) {
         Arg *arg_ptr = args.get(argv[i]);
 
         if (arg_ptr == nullptr) {
@@ -150,11 +172,16 @@ inline ParsedArgs parse_args(const int argc, const char *const *const argv) {
             exit(EXIT_FAILURE);
         }
 
+        auto &[name, label, flag, value, min, max, validator] = *arg_ptr;
+
+        if (flag) {
+            value = true;
+            i++;
+        }
+
         if (i + 1 >= argc) {
             break;
         }
-
-        auto &[name, label, value, min, max, validator] = *arg_ptr;
 
         errno = 0;
         char *end;
@@ -180,6 +207,8 @@ inline ParsedArgs parse_args(const int argc, const char *const *const argv) {
                 << args.usage_string(argv[0]) << endl;
             exit(EXIT_FAILURE);
         }
+
+        i += 2;
     }
 
     for (const auto *arg: args) {
