@@ -39,6 +39,14 @@ public:
         return m_height;
     }
 
+    [[nodiscard]] const std::vector<uint8_t> &dict() const {
+        return m_dict;
+    }
+
+    [[nodiscard]] const std::unordered_map<uint8_t, uint8_t> &dict_inv() const {
+        return m_dict_inv;
+    }
+
     [[nodiscard]] const bit_vector &get_bit_vector() const {
         return m_bit_vector;
     }

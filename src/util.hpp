@@ -4,8 +4,12 @@
 #include <string>
 #include <sdsl/suffix_arrays.hpp>
 
-inline std::string do_bwt(const std::string &text) {
-    const int64_t n = text.size();
+inline std::string do_bwt(std::string &text) {
+    if (text[text.size() - 1] != '\0') {
+        text += '\0';
+    }
+
+    const int64_t n = text.size(); // NOLINT(*-narrowing-conversions)
     sdsl::int_vector sa(1, 0, sdsl::bits::hi(n) + 1);
     sa.resize(n);
     sdsl::algorithm::calculate_sa(reinterpret_cast<const unsigned char *>(text.data()), n, sa);
@@ -28,7 +32,7 @@ inline std::string read_file(const std::string &file_path) {
     }
 
     file.seekg(0, std::ios::end);
-    const uint64_t file_size = file.tellg();
+    const int64_t file_size = file.tellg();
     file.seekg(0, std::ios::beg);
 
     std::string contents(file_size, 0);
