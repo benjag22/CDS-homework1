@@ -1,107 +1,219 @@
 #pragma once
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <set>
+#include <stack>
+#include <unordered_map>
+#include <vector>
+
 #include "bit_vector.hpp"
 
-struct Node {
-    bit_vector representation;
-    Node* childs[2]{};
-
-    explicit Node(const uint32_t len) : representation(len) {
-        childs[0] = nullptr;
-        childs[1] = nullptr;
-    }
-
-    ~Node() {
-        delete childs[0];
-        delete childs[1];
-    }
-};
-
-class WaveletTree {
-    uint32_t sigma;
-    uint32_t n_size;
-    int height;
-    Node* root;
+class wavelet_tree {
+    std::vector<uint8_t> m_dict;
+    std::unordered_map<uint8_t, uint8_t> m_dict_inv;
+    bit_vector m_bit_vector;
+    uint64_t m_size = 0;
+    uint8_t m_sigma = 0;
+    uint8_t m_height = 0;
 
 public:
-    explicit WaveletTree(std::vector<uint32_t> const &sequence) {
-        if (sequence.empty()) {
-            root = nullptr;
-            return;
-        }
-        sigma = 0;
-        for (auto const &e : sequence) sigma = std::max(sigma, e);
-
-        n_size = sequence.size();
-        height = (sigma == 0) ? 0 : static_cast<int>(std::floor(std::log2(sigma)));
-        root = buildTree(sequence, height);
+    explicit wavelet_tree(const std::string &text) {
+        m_size = text.size();
+        std::string copy = text;
+        const std::set<uint8_t> chars(text.begin(), text.end());
+        build_tree(copy, chars);
     }
 
-    ~WaveletTree() { delete root; }
-
-    [[nodiscard]] uint32_t access(uint32_t index) const {
-        int h = height;
-        uint32_t element = 0;
-        const Node* aux = root;
-        while (aux != nullptr) {
-            if (aux->representation.access(index) == 0) {
-                index = aux->representation.rank_0(static_cast<int>(index)) - 1;
-                aux = aux->childs[0];
-            } else {
-                element |= (1 << h);
-                index = aux->representation.rank_1(static_cast<int>(index)) - 1;
-                aux = aux->childs[1];
-            }
-            h--;
+    explicit wavelet_tree(const std::filesystem::path &file_path) {
+        std::ifstream file(file_path);
+        if (!file.is_open() || !file.good() || file.bad() || file.fail() || file.eof()) {
+            std::cerr << "Error: Could not open file: " << file_path << std::endl;
+            std::exit(EXIT_FAILURE);
         }
-        return element;
+
+        file.seekg(0, std::ios::end);
+        m_size = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        std::string contents;
+        std::set<uint8_t> chars;
+        contents.reserve(m_size);
+
+        while (!file.eof()) {
+            int8_t c = file.get();
+            if (c == EOF) break;
+            chars.insert(c);
+            contents.push_back(c);
+        }
+
+        build_tree(contents, chars);
     }
 
-    [[nodiscard]] uint32_t rank(const uint32_t symbol, uint32_t index) const {
-        if (index == 0) return 0;
-        index -= 1;
-        int h = height;
-        const Node* aux = root;
-        while (aux != nullptr) {
-            if ((symbol >> h) & 1) {
-                const uint32_t cnt = aux->representation.rank_1(static_cast<int>(index));
-                if (cnt == 0) return 0;
-                index = cnt - 1;
-                aux = aux->childs[1];
+    [[nodiscard]] uint64_t size() const {
+        return m_size;
+    }
+
+    [[nodiscard]] uint64_t height() const {
+        return m_height;
+    }
+
+    [[nodiscard]] uint8_t access(uint64_t i) const {
+        uint64_t offset = 0;
+        uint64_t seq_size = m_size;
+        uint8_t left = 0, right = m_sigma;
+        uint8_t height = 0;
+
+        while (right - left > 1) {
+            const uint8_t pivot = left + (right - left + 1) / 2;
+            const uint64_t base = m_size * height + offset;
+            const uint64_t zeros_before_base = base > 0 ? m_bit_vector.rank_0(base - 1) : 0;
+            const uint64_t total_zeros = m_bit_vector.rank_0(base + seq_size - 1) - zeros_before_base;
+
+            if (m_bit_vector.access(base + i) == 0) {
+                i = m_bit_vector.rank_0(base + i) - zeros_before_base - 1;
+                seq_size = total_zeros;
+                right = pivot;
             } else {
-                const uint32_t cnt = aux->representation.rank_0(static_cast<int>(index));
-                if (cnt == 0) return 0;
-                index = cnt - 1;
-                aux = aux->childs[0];
+                const uint64_t ones_up_to_i = i + 1 - (m_bit_vector.rank_0(base + i) - zeros_before_base);
+                i = ones_up_to_i - 1;
+                offset += total_zeros;
+                seq_size -= total_zeros;
+                left = pivot;
             }
-            h--;
+            height++;
         }
-        return index + 1;
+
+        return m_dict[left];
+    }
+
+    [[nodiscard]] uint64_t rank(const uint64_t i, uint8_t const symbol) const {
+        if (!m_dict_inv.contains(symbol)) {
+            return 0;
+        }
+
+        const uint8_t si = m_dict_inv.at(symbol);
+        uint64_t offset = 0;
+        uint64_t seq_size = m_size;
+        uint8_t left = 0, right = m_sigma;
+        uint8_t height = 0;
+        uint64_t pos = i;
+
+        while (right - left > 1) {
+            const uint8_t pivot = left + (right - left + 1) / 2;
+            const uint64_t base = m_size * height + offset;
+            const uint64_t zeros_before_base = base > 0 ? m_bit_vector.rank_0(base - 1) : 0;
+            const uint64_t total_zeros = m_bit_vector.rank_0(base + seq_size - 1) - zeros_before_base;
+            const uint64_t zeros_up_to_pos = m_bit_vector.rank_0(base + pos) - zeros_before_base;
+            const uint64_t ones_up_to_pos = pos + 1 - zeros_up_to_pos;
+
+            if (si < pivot) {
+                if (zeros_up_to_pos == 0) {
+                    return 0;
+                }
+
+                pos = zeros_up_to_pos - 1;
+                seq_size = total_zeros;
+                right = pivot;
+            } else {
+                if (ones_up_to_pos == 0) {
+                    return 0;
+                }
+
+                pos = ones_up_to_pos - 1;
+                offset += total_zeros;
+                seq_size -= total_zeros;
+                left = pivot;
+            }
+
+            height++;
+        }
+
+        return pos + 1;
+    }
+
+    // TODO remove
+    [[nodiscard]] std::string to_string() const {
+        std::stringstream ss;
+
+        for (uint64_t i = 0; i < m_bit_vector.size(); i++) {
+            ss << static_cast<int>(m_bit_vector.access(i));
+            if ((i + 1) % m_size == 0) {
+                ss << "\n";
+            }
+        }
+
+        return ss.str();
     }
 
 private:
-    static Node* buildTree(const std::vector<uint32_t>& sequence, const int h) {
-        if (sequence.empty() || h < -1) return nullptr;
+    void build_tree(std::string &text, const std::set<uint8_t> &chars) {
+        m_sigma = chars.size();
+        m_dict.reserve(m_sigma);
+        m_dict_inv.reserve(m_sigma);
 
-        const auto node = new Node(sequence.size());
-        std::vector<uint32_t> left_side, right_side;
+        uint8_t ci = 0;
+        for (const uint8_t &c: chars) {
+            m_dict.push_back(c);
+            m_dict_inv[c] = ci++;
+        }
 
-        for (int i = 0; i < sequence.size(); ++i) {
-            if ((sequence[i] >> h) & 1) {
-                node->representation.set(i);
-                right_side.push_back(sequence[i]);
-            } else {
-                left_side.push_back(sequence[i]);
+        uint8_t tmp = m_sigma;
+        while (tmp >>= 1) {
+            m_height++;
+        }
+        if (m_sigma > 1 << m_height) {
+            m_height++;
+        }
+
+        m_bit_vector.set_size(m_size * m_height);
+        build_bit_vector(text);
+        m_bit_vector.build_rank();
+    }
+
+    void build_bit_vector(std::string &initial_sequence) {
+        struct frame {
+            std::string sequence;
+            uint64_t offset;
+            uint8_t height;
+            uint8_t left;
+            uint8_t right;
+        };
+
+        std::stack<frame> stack;
+        stack.emplace(std::move(initial_sequence), 0, 0, 0, m_sigma);
+
+        while (!stack.empty()) {
+            auto [sequence, offset, height, left, right] = std::move(stack.top());
+            stack.pop();
+
+            const uint64_t size_half = (sequence.size() + 1) / 2;
+            const uint8_t pivot = left + (right - left + 1) / 2;
+            std::string left_side, right_side;
+
+            left_side.reserve(size_half);
+            right_side.reserve(size_half);
+
+            for (uint64_t i = 0; i < sequence.size(); ++i) {
+                if (m_dict_inv[sequence[i]] < pivot) {
+                    left_side.push_back(sequence[i]);
+                } else {
+                    m_bit_vector.flip(m_size * height + offset + i);
+                    right_side.push_back(sequence[i]);
+                }
+            }
+
+            // dfs order
+            if (right - pivot > 1) {
+                stack.emplace(std::move(right_side), offset + left_side.size(), height + 1, pivot, right);
+            }
+            if (pivot - left > 1) {
+                stack.emplace(std::move(left_side), offset, height + 1, left, pivot);
             }
         }
-
-        node->representation.build_rank();
-
-        if (h >= 0) {
-            node->childs[0] = buildTree(left_side, h - 1);
-            node->childs[1] = buildTree(right_side, h - 1);
-        }
-        return node;
     }
 };
