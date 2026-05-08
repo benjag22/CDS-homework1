@@ -68,6 +68,7 @@ public:
             s_count += count;
             b_count += count;
 
+            // the compiler should be smart enough to optimize %
             if (offset % S == 0) {
                 m_super_blocks[si++] = s_count;
                 b_count = 0;
@@ -119,6 +120,7 @@ public:
      * @throws std::out_of_range when CHECK_RANGES is set and i >= size()
      */
     void flip(const uint64_t i) {
+        // the compiler should be smart enough to optimize / and %
         if (CHECK_RANGES && i >= m_size) {
             throw std::out_of_range("access out of range");
         }
@@ -134,6 +136,7 @@ public:
      * @throws std::out_of_range when CHECK_RANGES is set and i >= size()
      */
     [[nodiscard]] uint8_t access(const uint64_t i) const {
+        // the compiler should be smart enough to optimize / and %
         if (CHECK_RANGES && i >= m_size) {
             throw std::out_of_range("access out of range");
         }
@@ -147,6 +150,7 @@ public:
      * @throws std::out_of_range when CHECK_RANGES is set and i >= size()
      */
     [[nodiscard]] uint64_t rank_1(const uint64_t i) const {
+        // the compiler should be smart enough to optimize / and %
         if (CHECK_RANGES && i >= m_size) {
             throw std::out_of_range("access out of range");
         }

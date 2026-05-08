@@ -8,23 +8,41 @@
 #include "util.hpp"
 #include "wavelet_tree.hpp"
 
+// Enumeration of wavelet tree implementations to use for rank queries.
 enum class WTType {
+    // Custom wavelet tree implementation.
     OWN_IMPL,
+    // SDSL integer-based wavelet tree.
     SDSL_INT,
+    // SDSL Huffman-coded wavelet tree.
     SDSL_HUFF,
+    // Brute force counting (for testing).
     BRUTE_FORCE,
 };
 
+// Data structure for fast pattern counting.
 class fm_index {
+    // The BWT (Burrows-Wheeler Transform) of the original text.
     std::string m_bwt;
+    // Custom wavelet tree implementation for the BWT.
     wavelet_tree m_own_wt;
+    // SDSL integer-based wavelet tree for the BWT.
     sdsl::wt_int<> m_sdsl_wt_int;
+    // SDSL Huffman-coded wavelet tree for the BWT.
     sdsl::wt_huff<> m_sdsl_wt_huff;
+    // Dictionary of unique characters in the BWT, sorted by ASCII order.
     std::vector<uint8_t> m_dict;
+    // Inverse mapping from character to its index in the dictionary.
     std::unordered_map<uint8_t, uint8_t> m_dict_inv;
+    // Count of characters lexicographically strictly less than each character in the BWT.
     std::unordered_map<uint8_t, uint64_t> m_lex_less_counts;
 
 public:
+    /**
+     * Create an FM-index from a text file.
+     * Constructs the BWT and builds all wavelet tree implementations for querying.
+     * @param file_path Path to the text file.
+     */
     explicit fm_index(const std::filesystem::path &file_path) {
         std::string text = read_file(file_path);
         m_bwt = do_bwt(text);
@@ -48,6 +66,12 @@ public:
         }
     }
 
+    /**
+     * Count the number of occurrences of a pattern in the indexed text.
+     * @param pattern The pattern to search for.
+     * @param type The wavelet tree implementation to use for rank queries.
+     * @return The number of times the pattern appears in the original text.
+     */
     [[nodiscard]] uint64_t count(const std::string &pattern, const WTType type) const {
         uint64_t i = pattern.size() - 1;
         uint8_t c = pattern[i];
@@ -61,6 +85,7 @@ public:
         uint64_t start = m_lex_less_counts.at(c);
         uint64_t end = next_v >= c ? m_lex_less_counts.at(next_v) - 1 : m_bwt.size() - 1;
 
+        // binary search on BWT
         while (start <= end && i > 0) {
             c = pattern[--i];
 
@@ -77,6 +102,14 @@ public:
     }
 
 private:
+    /**
+     * Get the number of occurrences of a symbol up to position k.
+     * Uses the specified wavelet tree implementation.
+     * @param v The symbol to count.
+     * @param k The position to count up to.
+     * @param type The wavelet tree implementation to use.
+     * @return The number of occurrences of the symbol up to position k.
+     */
     [[nodiscard]] uint64_t occ(const uint8_t v, const uint64_t k, const WTType type) const {
         switch (type) {
             case WTType::OWN_IMPL:
@@ -91,6 +124,12 @@ private:
         __builtin_unreachable();
     }
 
+    /**
+     * Get the next symbol in the sorted dictionary (wrapping around).
+     * @param symbol The current symbol.
+     * @return The next symbol in sorted order, or the first symbol if at the end.
+     * @throws std::out_of_range when CHECK_RANGES is set and symbol is not in dictionary.
+     */
     [[nodiscard]] uint8_t next_symbol(const uint8_t symbol) const {
         if (CHECK_RANGES && !m_dict_inv.contains(symbol)) {
             throw std::out_of_range("symbol not in dictionary");
@@ -101,6 +140,12 @@ private:
         return m_dict[next_pos];
     }
 
+    /**
+     * Count occurrences of a symbol using brute force (for testing).
+     * @param k The position to count up to.
+     * @param v The symbol to count.
+     * @return The number of times symbol appears up to position k.
+     */
     [[nodiscard]] uint64_t force_brute(const uint64_t k, const uint8_t v) const {
         const uint64_t limit = std::min(m_bwt.size(), k + 1);
         uint64_t counter = 0;
