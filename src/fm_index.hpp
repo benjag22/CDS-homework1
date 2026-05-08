@@ -22,6 +22,8 @@ enum class WTType {
 
 // Data structure for fast pattern counting.
 class fm_index {
+    // The original text. Only used to generate testing patterns.
+    std::string m_text;
     // The BWT (Burrows-Wheeler Transform) of the original text.
     std::string m_bwt;
     // The size of the BWT.
@@ -46,8 +48,8 @@ public:
      * @param file_path Path to the text file.
      */
     explicit fm_index(const std::filesystem::path &file_path) {
-        std::string text = read_file(file_path);
-        m_bwt = do_bwt(text);
+        m_text = read_file(file_path);
+        m_bwt = do_bwt(m_text);
         m_bwt_size = m_bwt.size();
         m_own_wt.build(m_bwt);
 
@@ -78,11 +80,11 @@ public:
     }
 
     /**
-     * Get the dictionary mapping characters to indices, sorted by ASCII order.
-     * @return A const reference to the sorted character dictionary.
+     * Get the original text.
+     * @return A const reference to the original text.
      */
-    [[nodiscard]] const std::vector<uint8_t> &dict() const {
-        return m_dict;
+    [[nodiscard]] const std::string &text() const {
+        return m_text;
     }
 
     /**

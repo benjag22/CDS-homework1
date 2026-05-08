@@ -48,7 +48,7 @@ struct Args {
     Arg upper{
         .name = "-u",
         .description = "Upper bound for test cases range.",
-        .value = 1024,
+        .value = 1025,
         .min = 1,
         .validator = [this]() -> ArgValidationResult {
             return {upper > lower, upper.description + " must be > " + lower.description};

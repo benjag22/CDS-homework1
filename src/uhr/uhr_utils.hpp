@@ -43,7 +43,7 @@ inline void display_progress(const uint64_t runs, const uint64_t total) {
     constexpr uint64_t width = 70;
     const size_t p = width * progress;
     std::stringstream stream;
-    stream << std::fixed << std::setprecision(2) << progress * 100;
+    stream << std::fixed << std::setprecision(3) << progress * 100;
     const std::string &progress_string = stream.str();
 
     cout << "[";

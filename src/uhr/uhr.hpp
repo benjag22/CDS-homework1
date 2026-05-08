@@ -74,8 +74,8 @@ inline void uhr(
     std::cout << "Building FM-Index..." << std::endl;
 
     const fm_index fmi(input_file_path);
-    const std::vector<uint8_t> &dict = fmi.dict();
-    int_generator<int> generator(1, dict.size() - 1);
+    const std::string &text = fmi.text();
+    int_generator<uint64_t> generator(0, text.size() - upper - 2);
 
     // Begin testing
     const std::string test_name = std::filesystem::path(results_file_path).stem().string();
@@ -91,10 +91,8 @@ inline void uhr(
             double time_stdev = 0;
 
             // Test configuration goes here
-            std::string pattern(n, 0);
-            for (uint64_t i = 0; i < n; i++) {
-                pattern[i] = dict[generator()];
-            }
+            const uint64_t pattern_start = generator();
+            const std::string pattern(text.begin() + pattern_start, text.begin() + pattern_start + n);
 
             // Run to compute elapsed time
             for (size_t i = 0; i < runs; i++) {
