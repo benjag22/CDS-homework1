@@ -1,17 +1,13 @@
 #pragma once
 
-#include <algorithm>
-#include <cmath>
 #include <cstdint>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
 #include <set>
 #include <stack>
 #include <unordered_map>
 #include <vector>
 
 #include "bit_vector.hpp"
+#include "config.hpp"
 
 class wavelet_tree {
     std::vector<uint8_t> m_dict;
@@ -22,36 +18,17 @@ class wavelet_tree {
     uint8_t m_height = 0;
 
 public:
+    wavelet_tree() = default;
+
     explicit wavelet_tree(const std::string &text) {
+        build(text);
+    }
+
+    void build(const std::string &text) {
         m_size = text.size();
         std::string copy = text;
         const std::set<uint8_t> chars(text.begin(), text.end());
         build_tree(copy, chars);
-    }
-
-    explicit wavelet_tree(const std::filesystem::path &file_path) {
-        std::ifstream file(file_path);
-        if (!file.is_open() || !file.good() || file.bad() || file.fail() || file.eof()) {
-            std::cerr << "Error: Could not open file: " << file_path << std::endl;
-            std::exit(EXIT_FAILURE);
-        }
-
-        file.seekg(0, std::ios::end);
-        m_size = file.tellg();
-        file.seekg(0, std::ios::beg);
-
-        std::string contents;
-        std::set<uint8_t> chars;
-        contents.reserve(m_size);
-
-        while (!file.eof()) {
-            int8_t c = file.get();
-            if (c == EOF) break;
-            chars.insert(c);
-            contents.push_back(c);
-        }
-
-        build_tree(contents, chars);
     }
 
     [[nodiscard]] uint64_t size() const {
@@ -62,7 +39,15 @@ public:
         return m_height;
     }
 
+    [[nodiscard]] const bit_vector &get_bit_vector() const {
+        return m_bit_vector;
+    }
+
     [[nodiscard]] uint8_t access(uint64_t i) const {
+        if (CHECK_RANGES && i >= m_size) {
+            throw std::out_of_range("access out of range");
+        }
+
         uint64_t offset = 0;
         uint64_t seq_size = m_size;
         uint8_t left = 0, right = m_sigma;
@@ -92,6 +77,10 @@ public:
     }
 
     [[nodiscard]] uint64_t rank(const uint64_t i, uint8_t const symbol) const {
+        if (CHECK_RANGES && i >= m_size) {
+            throw std::out_of_range("access out of range");
+        }
+
         if (!m_dict_inv.contains(symbol)) {
             return 0;
         }
@@ -136,18 +125,8 @@ public:
         return pos + 1;
     }
 
-    // TODO remove
-    [[nodiscard]] std::string to_string() const {
-        std::stringstream ss;
-
-        for (uint64_t i = 0; i < m_bit_vector.size(); i++) {
-            ss << static_cast<int>(m_bit_vector.access(i));
-            if ((i + 1) % m_size == 0) {
-                ss << "\n";
-            }
-        }
-
-        return ss.str();
+    [[nodiscard]] bool operator==(const std::vector<uint64_t> &v) const {
+        return v == m_bit_vector;
     }
 
 private:
@@ -217,3 +196,18 @@ private:
         }
     }
 };
+
+inline std::ostream &operator<<(std::ostream &os, const wavelet_tree &wt) {
+    const uint64_t wt_size = wt.size();
+    const bit_vector &bv = wt.get_bit_vector();
+    const uint64_t bv_size = bv.size();
+
+    for (uint64_t i = 0; i < bv_size; i++) {
+        os << static_cast<int>(bv.access(i));
+        if (i < bv_size - 1 && (i + 1) % wt_size == 0) {
+            os << '\n';
+        }
+    }
+
+    return os;
+}

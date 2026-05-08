@@ -4,6 +4,8 @@
 #include <limits>
 #include <vector>
 
+#include "config.hpp"
+
 // Gets the number of bits set to 1 in a 64-bit integer.
 #define POPCNT(x) __builtin_popcountll(x)
 
@@ -113,8 +115,12 @@ public:
      * Bits are written from least-significant (lsb) to most-significant (msb).
      * You must call build_rank() afterward if you want to use rank operations.
      * @param i The i-th bit to flip.
+     * @throws std::out_of_range when CHECK_RANGES is set and i >= size()
      */
     void flip(const uint64_t i) {
+        if (CHECK_RANGES && i >= m_size) {
+            throw std::out_of_range("access out of range");
+        }
         m_bit_array[i / 64] ^= 1ull << (i % 64);
     }
 
@@ -124,8 +130,12 @@ public:
      * Bits are read from least-significant (lsb) to most-significant (msb).
      * @param i The i-th bit to access.
      * @return The value of the i-th bit.
+     * @throws std::out_of_range when CHECK_RANGES is set and i >= size()
      */
     [[nodiscard]] uint8_t access(const uint64_t i) const {
+        if (CHECK_RANGES && i >= m_size) {
+            throw std::out_of_range("access out of range");
+        }
         return m_bit_array[i / 64] >> (i % 64) & 1;
     }
 
@@ -133,8 +143,12 @@ public:
      * Get the number of 1s up to the index (inclusive).
      * @param i The position to count up to.
      * @return The number of 1s up to the index.
+     * @throws std::out_of_range when CHECK_RANGES is set and i >= size()
      */
     [[nodiscard]] uint64_t rank_1(const uint64_t i) const {
+        if (CHECK_RANGES && i >= m_size) {
+            throw std::out_of_range("access out of range");
+        }
         const uint64_t s_count = m_super_blocks[i / S];
         const uint64_t b_count = m_blocks[i / B];
         const uint64_t bucket = i / 64;
@@ -152,6 +166,7 @@ public:
      * @param i The position to count from.
      * @param j The position to count up to.
      * @return The number of 1s in the range.
+     * @throws std::out_of_range when CHECK_RANGES is set and i - 1 >= size() or j >= size()
      */
     [[nodiscard]] uint64_t rank_1(const uint64_t i, const uint64_t j) const {
         return rank_1(j) - rank_1(i - 1);
@@ -161,6 +176,7 @@ public:
      * Get the number of 0s up to the index (inclusive).
      * @param i The position to count up to.
      * @return The number of 0s up to the index.
+     * @throws std::out_of_range when CHECK_RANGES is set and i >= size()
      */
     [[nodiscard]] uint64_t rank_0(const uint64_t i) const {
         return i + 1 - rank_1(i);
@@ -171,8 +187,13 @@ public:
      * @param i The position to count from.
      * @param j The position to count up to.
      * @return The number of 0s in the range.
+     * @throws std::out_of_range when CHECK_RANGES is set and i - 1 >= size() or j >= size()
      */
     [[nodiscard]] uint64_t rank_0(const uint64_t i, const uint64_t j) const {
         return rank_0(j) - rank_0(i - 1);
+    }
+
+    [[nodiscard]] bool operator==(const std::vector<uint64_t> &v) const {
+        return m_bit_array == v;
     }
 };
