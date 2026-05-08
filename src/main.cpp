@@ -1,13 +1,17 @@
 #include <filesystem>
-#include <iostream>
 
-#include "fm_index.hpp"
+#include "args.hpp"
+#include "uhr/uhr.hpp"
 
-int main() {
-    const auto base_path = std::filesystem::path(__builtin_FILE()).parent_path().parent_path() / "texts";
-    const fm_index fmi(base_path / "example.txt");
+int main(const int argc, const char *const argv[]) {
+    const ParsedArgs &args = parse_args(argc, argv);
 
-    std::cout << fmi.count("on", WTType::BRUTE_FORCE) << std::endl;
+    const auto input_file_path = std::filesystem::path(args.text_file_path);
+    const auto results_file_path = std::filesystem::path(__builtin_FILE()).parent_path().parent_path()
+        / "data"
+        / input_file_path.filename().replace_extension(".csv");
+
+    uhr(input_file_path, results_file_path, args.runs, args.lower, args.upper, args.step, true);
 
     return 0;
 }

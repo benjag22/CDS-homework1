@@ -11,6 +11,9 @@ add_executable(
     src/fm_index.hpp
     src/util.hpp
     src/config.hpp
+    src/uhr/uhr.hpp
+    src/uhr/uhr_utils.hpp
+    src/args.hpp
 )
 
 target_include_directories(cds-hw1 PRIVATE ${SDSL_INCLUDE_DIR})

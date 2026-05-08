@@ -24,6 +24,8 @@ enum class WTType {
 class fm_index {
     // The BWT (Burrows-Wheeler Transform) of the original text.
     std::string m_bwt;
+    // The size of the BWT.
+    uint64_t m_bwt_size;
     // Custom wavelet tree implementation for the BWT.
     wavelet_tree m_own_wt;
     // SDSL integer-based wavelet tree for the BWT.
@@ -46,6 +48,7 @@ public:
     explicit fm_index(const std::filesystem::path &file_path) {
         std::string text = read_file(file_path);
         m_bwt = do_bwt(text);
+        m_bwt_size = m_bwt.size();
         m_own_wt.build(m_bwt);
 
         const std::string bwt_path = sdsl::ram_file_name(file_path.filename());
@@ -67,12 +70,32 @@ public:
     }
 
     /**
+     * Get the size of the original text.
+     * @return The size of the original text.
+     */
+    [[nodiscard]] uint64_t size() const {
+        return m_bwt_size - 1;
+    }
+
+    /**
+     * Get the dictionary mapping characters to indices, sorted by ASCII order.
+     * @return A const reference to the sorted character dictionary.
+     */
+    [[nodiscard]] const std::vector<uint8_t> &dict() const {
+        return m_dict;
+    }
+
+    /**
      * Count the number of occurrences of a pattern in the indexed text.
      * @param pattern The pattern to search for.
      * @param type The wavelet tree implementation to use for rank queries.
      * @return The number of times the pattern appears in the original text.
      */
     [[nodiscard]] uint64_t count(const std::string &pattern, const WTType type) const {
+        if (pattern.size() > m_bwt_size - 1) {
+            return 0;
+        }
+
         uint64_t i = pattern.size() - 1;
         uint8_t c = pattern[i];
 
@@ -80,10 +103,9 @@ public:
             return 0;
         }
 
-        const uint8_t next_v = next_symbol(c);
-
+        const uint8_t next_c = next_symbol(c);
         uint64_t start = m_lex_less_counts.at(c);
-        uint64_t end = next_v >= c ? m_lex_less_counts.at(next_v) - 1 : m_bwt.size() - 1;
+        uint64_t end = next_c >= c ? m_lex_less_counts.at(next_c) - 1 : m_bwt_size - 1;
 
         // binary search on BWT
         while (start <= end && i > 0) {
@@ -99,6 +121,38 @@ public:
         }
 
         return end >= start ? end - start + 1 : 0;
+    }
+
+    /**
+     * Get the size of this fm_index in bytes, depending on the wavelet tree used.
+     * @return The size of this fm_index in bytes.
+     */
+    [[nodiscard]] uint64_t size_in_bytes(const WTType type) const {
+        uint64_t size = sizeof(m_bwt_size)
+            + sizeof(m_dict)
+            + sizeof(m_dict_inv)
+            + sizeof(m_lex_less_counts)
+            + m_dict.size() * sizeof(uint8_t)
+            + m_dict_inv.size() * (sizeof(uint8_t) + sizeof(uint8_t))
+            + m_lex_less_counts.size() * (sizeof(uint8_t) + sizeof(uint64_t));
+
+        switch (type) {
+            case WTType::OWN_IMPL:
+                size += m_own_wt.size_in_bytes();
+                break;
+            case WTType::SDSL_INT:
+                size += sdsl::size_in_bytes(m_sdsl_wt_int);
+                break;
+            case WTType::SDSL_HUFF:
+                size += sdsl::size_in_bytes(m_sdsl_wt_huff);
+                break;
+            case WTType::BRUTE_FORCE: {
+                size += sizeof(m_bwt) + m_bwt.size();
+                break;
+            }
+        }
+
+        return size;
     }
 
 private:
@@ -157,3 +211,21 @@ private:
         return counter;
     }
 };
+
+inline std::ostream &operator<<(std::ostream &out, const WTType wt_type) {
+    switch (wt_type) {
+        case WTType::OWN_IMPL:
+            out << "own_impl";
+            break;
+        case WTType::SDSL_INT:
+            out << "sdsl_int";
+            break;
+        case WTType::SDSL_HUFF:
+            out << "sdsl_huff";
+            break;
+        case WTType::BRUTE_FORCE:
+            out << "brute_force";
+            break;
+    }
+    return out;
+}
