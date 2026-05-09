@@ -95,6 +95,7 @@ public:
         ss << std::boolalpha;
 
         ss << "Usage: " + cmd + " <text_file_path> [options]\n\n"
+            << "<text_file_path> must be an absolute path\n\n"
             << "Options:\n\n";
 
         for (const auto &arg: m_args_list) {

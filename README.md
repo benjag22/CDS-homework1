@@ -24,6 +24,8 @@ segmentation faults.
 ```
 Usage: ./build/cds-hw1 <text_file_path> [options]
 
+<text_file_path> must be an absolute path
+
 Options:
 
   -r : Number of runs per test case.
