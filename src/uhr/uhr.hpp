@@ -75,6 +75,12 @@ inline void uhr(
 
     const fm_index fmi(input_file_path);
     const std::string &text = fmi.text();
+
+    if (upper > text.size() - 2) {
+        std::cerr << "Upper bound is longer than the input text. Aborting tests." << std::endl;
+        return;
+    }
+
     int_generator<uint64_t> generator(0, text.size() - upper - 2);
 
     // Begin testing
