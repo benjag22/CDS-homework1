@@ -34,12 +34,14 @@ class fm_index {
     sdsl::wt_int<> m_sdsl_wt_int;
     // SDSL Huffman-coded wavelet tree for the BWT.
     sdsl::wt_huff<> m_sdsl_wt_huff;
+    // Size of dictionary of unique characters.
+    uint8_t m_sigma;
     // Dictionary of unique characters in the BWT, sorted by ASCII order.
-    std::vector<uint8_t> m_dict;
+    uint8_t *m_dict;
     // Inverse mapping from character to its index in the dictionary.
     std::unordered_map<uint8_t, uint8_t> m_dict_inv;
     // Count of characters lexicographically strictly less than each character in the BWT.
-    std::unordered_map<uint8_t, uint64_t> m_lex_less_counts;
+    std::unordered_map<uint8_t, uint64_t> m_lex_smaller_counts;
 
 public:
     /**
@@ -59,15 +61,22 @@ public:
         sdsl::construct(m_sdsl_wt_huff, bwt_path, 1);
         sdsl::remove(bwt_path);
 
+        m_sigma = m_own_wt.sigma();
         m_dict = m_own_wt.dict();
         m_dict_inv = m_own_wt.dict_inv();
-        m_lex_less_counts.reserve(m_dict.size());
-        m_lex_less_counts[m_dict[0]] = 0;
+        m_lex_smaller_counts.reserve(m_sigma);
+        m_lex_smaller_counts[m_dict[0]] = 0;
 
-        for (uint64_t i = 1; i < m_dict.size(); i++) {
+        for (uint64_t i = 1; i < m_sigma; i++) {
             const uint8_t curr = m_dict[i];
             const uint8_t prev = m_dict[i - 1];
-            m_lex_less_counts[curr] = m_lex_less_counts[prev] + m_own_wt.rank(m_own_wt.size() - 1, prev);
+            m_lex_smaller_counts[curr] = m_lex_smaller_counts[prev] + m_own_wt.rank(m_own_wt.size() - 1, prev);
+        }
+    }
+
+    ~fm_index() {
+        if (m_dict != nullptr) {
+            delete[] m_dict;
         }
     }
 
@@ -101,23 +110,26 @@ public:
         uint64_t i = pattern.size() - 1;
         uint8_t c = pattern[i];
 
-        if (!m_lex_less_counts.contains(c)) {
+        if (!m_dict_inv.contains(c)) {
             return 0;
+        }
+        if (i == 0) {
+            return 1;
         }
 
         const uint8_t next_c = next_symbol(c);
-        uint64_t start = m_lex_less_counts.at(c);
-        uint64_t end = next_c >= c ? m_lex_less_counts.at(next_c) - 1 : m_bwt_size - 1;
+        uint64_t start = m_lex_smaller_counts.at(c);
+        uint64_t end = next_c >= c ? m_lex_smaller_counts.at(next_c) - 1 : m_bwt_size - 1;
 
         // binary search on BWT
         while (start <= end && i > 0) {
             c = pattern[--i];
 
-            if (!m_lex_less_counts.contains(c)) {
+            if (!m_dict_inv.contains(c)) {
                 return 0;
             }
 
-            const uint64_t c_less_count = m_lex_less_counts.at(c);
+            const uint64_t c_less_count = m_lex_smaller_counts.at(c);
             start = c_less_count + occ(c, start - 1, type);
             end = c_less_count + occ(c, end, type) - 1;
         }
@@ -131,12 +143,13 @@ public:
      */
     [[nodiscard]] uint64_t size_in_bytes(const WTType type) const {
         uint64_t size = sizeof(m_bwt_size)
+            + sizeof(m_sigma)
             + sizeof(m_dict)
             + sizeof(m_dict_inv)
-            + sizeof(m_lex_less_counts)
-            + m_dict.size() * sizeof(uint8_t)
+            + sizeof(m_lex_smaller_counts)
+            + m_sigma * sizeof(uint8_t)
             + m_dict_inv.size() * (sizeof(uint8_t) + sizeof(uint8_t))
-            + m_lex_less_counts.size() * (sizeof(uint8_t) + sizeof(uint64_t));
+            + m_lex_smaller_counts.size() * (sizeof(uint8_t) + sizeof(uint64_t));
 
         switch (type) {
             case WTType::OWN_IMPL:
@@ -171,9 +184,9 @@ private:
             case WTType::OWN_IMPL:
                 return m_own_wt.rank(k, v);
             case WTType::SDSL_INT:
-                return m_sdsl_wt_int.rank(k, v);
+                return m_sdsl_wt_int.rank(k + 1, v);
             case WTType::SDSL_HUFF:
-                return m_sdsl_wt_huff.rank(k, v);
+                return m_sdsl_wt_huff.rank(k + 1, v);
             case WTType::BRUTE_FORCE:
                 return force_brute(k, v);
         }
@@ -192,7 +205,7 @@ private:
         }
 
         const uint8_t pos = m_dict_inv.at(symbol);
-        const uint8_t next_pos = (pos + 1) % m_dict.size();
+        const uint8_t next_pos = (pos + 1) % m_sigma;
         return m_dict[next_pos];
     }
 

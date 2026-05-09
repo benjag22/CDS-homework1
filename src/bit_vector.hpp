@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <limits>
-#include <vector>
 
 #include "config.hpp"
 
@@ -19,13 +18,19 @@ class bit_vector {
     static constexpr uint64_t ONE = std::numeric_limits<uint64_t>::max();
 
     // The size of the bit_vector in bits.
-    uint64_t m_size;
+    uint64_t m_size = 0;
+    // The size of the bit array.
+    uint64_t m_bit_array_size = 0;
+    // The size of the blocks array.
+    uint64_t m_blocks_size = 0;
+    // The size of the super blocks array.
+    uint64_t m_super_blocks_size = 0;
     // The bit array of size ceil(size() / 64).
-    std::vector<uint64_t> m_bit_array;
+    uint64_t *m_bit_array = nullptr;
     // The number of 1s up to each block, relative to its super block.
-    std::vector<uint16_t> m_blocks;
+    uint16_t *m_blocks = nullptr;
     // The number of 1s up to each super block.
-    std::vector<uint64_t> m_super_blocks;
+    uint64_t *m_super_blocks = nullptr;
 
 public:
     /**
@@ -33,35 +38,32 @@ public:
      * @param size Number of bits this bit_vector will hold.
      * @param default_value Default value for the initial bits.
      */
-    explicit bit_vector(const uint64_t size = 0, const uint8_t default_value = 0)
-        : m_size(size),
-          m_bit_array((size + 63) / 64, default_value == 0 ? 0 : ONE),
-          m_blocks((size + B - 1) / B, 0),
-          m_super_blocks((size + S - 1) / S, 0) {
+    explicit bit_vector(const uint64_t size = 0, const uint8_t default_value = 0) {
+        set_size(size, default_value);
     }
 
-    /**
-     * Create a bit_vector from a bit array.
-     * Bits are read from least-significant (lsb) to most-significant (msb).
-     * @param bit_array The bit array this bit_vector will hold.
-     */
-    explicit bit_vector(const std::vector<uint64_t> &bit_array)
-        : m_size(bit_array.size() * 64),
-          m_bit_array(bit_array),
-          m_blocks((m_size + B - 1) / B, 0),
-          m_super_blocks((m_size + S - 1) / S, 0) {
-        build_rank();
+    ~bit_vector() {
+        if (m_bit_array != nullptr) {
+            delete[] m_bit_array;
+        }
+        if (m_blocks != nullptr) {
+            delete[] m_blocks;
+        }
+        if (m_super_blocks != nullptr) {
+            delete[] m_super_blocks;
+        }
     }
 
     /**
      * Build the helper structures that allow for a constant time rank operation.
      * This is required if you didn't create this bit_vector from a bit array.
      */
-    void build_rank() {
+    void build_rank() const {
         uint64_t si = 1, bi = 1, s_count = 0, offset = 0;
         uint16_t b_count = 0;
 
-        for (uint64_t const &num: m_bit_array) {
+        for (uint64_t i = 0; i < m_bit_array_size; i++) {
+            const uint64_t num = m_bit_array[i];
             const uint8_t count = POPCNT(num);
 
             offset += 64;
@@ -87,10 +89,37 @@ public:
      * @param default_value Optional default value for the bits.
      */
     void set_size(const uint64_t size, const uint64_t default_value = 0) {
+        if (m_bit_array != nullptr) {
+            delete[] m_bit_array;
+        }
+        if (m_blocks != nullptr) {
+            delete[] m_blocks;
+        }
+        if (m_super_blocks != nullptr) {
+            delete[] m_super_blocks;
+        }
+
+        if (size == 0) {
+            return;
+        }
+
         m_size = size;
-        m_bit_array.assign((size + 63) / 64, default_value == 0 ? 0 : ONE);
-        m_blocks.assign((size + B - 1) / B, 0);
-        m_super_blocks.assign((size + S - 1) / S, 0);
+        m_bit_array_size = (size + 63) / 64;
+        m_blocks_size = (size + B - 1) / B;
+        m_super_blocks_size = (size + S - 1) / S;
+        m_bit_array = new uint64_t[m_bit_array_size];
+        m_blocks = new uint16_t[m_blocks_size];
+        m_super_blocks = new uint64_t[m_super_blocks_size];
+
+        for (uint64_t i = 0; i < m_bit_array_size; i++) {
+            m_bit_array[i] = default_value;
+        }
+        for (uint64_t i = 0; i < m_blocks_size; i++) {
+            m_blocks[i] = 0;
+        }
+        for (uint64_t i = 0; i < m_super_blocks_size; i++) {
+            m_super_blocks[i] = 0;
+        }
     }
 
     /**
@@ -99,17 +128,6 @@ public:
      */
     [[nodiscard]] uint64_t size() const {
         return m_size;
-    }
-
-    /**
-     * Access the word at the i-th position.
-     * There's a total of ceil(size() / 64) words in a bit_vector.
-     * Bits are read from least-significant (lsb) to most-significant (msb).
-     * @param i The index to access.
-     * @return The word at the i-th position.
-     */
-    uint64_t &operator[](const uint64_t i) {
-        return m_bit_array[i];
     }
 
     /**
@@ -158,12 +176,11 @@ public:
         const uint64_t b_count = m_blocks[i / B];
         const uint64_t bucket = i / 64;
         const uint64_t offset = 63 - i % 64;
+        const bool needs_prev = i % B >= 64;
         const uint64_t pop_count = POPCNT(m_bit_array[bucket] << offset);
-        uint64_t count = s_count + b_count + pop_count;
-        if (i % B >= 64) {
-            count += POPCNT(m_bit_array[bucket - 1]);
-        }
-        return count;
+        // trick for branchless
+        const uint64_t prev = needs_prev * POPCNT(m_bit_array[bucket - needs_prev]);
+        return s_count + b_count + pop_count + prev;
     }
 
     /**
@@ -204,12 +221,8 @@ public:
      */
     [[nodiscard]] uint64_t size_in_bytes() const {
         return sizeof(bit_vector)
-            + m_bit_array.size() * sizeof(uint64_t)
-            + m_blocks.size() * sizeof(uint16_t)
-            + m_super_blocks.size() * sizeof(uint64_t);
-    }
-
-    [[nodiscard]] bool operator==(const std::vector<uint64_t> &v) const {
-        return m_bit_array == v;
+            + m_bit_array_size * sizeof(uint64_t)
+            + m_blocks_size * sizeof(uint16_t)
+            + m_super_blocks_size * sizeof(uint64_t);
     }
 };

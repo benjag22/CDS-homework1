@@ -4,7 +4,6 @@
 #include <set>
 #include <stack>
 #include <unordered_map>
-#include <vector>
 
 #include "bit_vector.hpp"
 #include "config.hpp"
@@ -12,7 +11,7 @@
 // Data structure that supports fast access and rank queries.
 class wavelet_tree {
     // The sorted dictionary of unique characters in the text.
-    std::vector<uint8_t> m_dict;
+    uint8_t *m_dict = nullptr;
     // Inverse mapping from character to its index in the dictionary.
     std::unordered_map<uint8_t, uint8_t> m_dict_inv;
     // Bit vector storing the tree structure.
@@ -36,6 +35,12 @@ public:
      */
     explicit wavelet_tree(const std::string &text) {
         build(text);
+    }
+
+    ~wavelet_tree() {
+        if (m_dict != nullptr) {
+            delete[] m_dict;
+        }
     }
 
     /**
@@ -66,11 +71,29 @@ public:
     }
 
     /**
-     * Get the dictionary mapping characters to indices, sorted by ASCII order.
-     * @return A const reference to the sorted character dictionary.
+     * Get the size of the text dictionary.
+     * @return The size of the text dictionary.
      */
-    [[nodiscard]] const std::vector<uint8_t> &dict() const {
-        return m_dict;
+    [[nodiscard]] uint8_t sigma() const {
+        return m_sigma;
+    }
+
+    /**
+     * Get a copy of the dictionary mapping characters to indices, sorted by ASCII order.
+     * @return A copy of the sorted character dictionary.
+     */
+    [[nodiscard]] uint8_t *dict() const {
+        if (m_dict == nullptr) {
+            const auto dict_copy = new uint8_t[1];
+            dict_copy[0] = 0;
+            return dict_copy;
+        }
+
+        const auto dict_copy = new uint8_t[m_sigma];
+        for (uint8_t i = 0; i < m_sigma; i++) {
+            dict_copy[i] = m_dict[i];
+        }
+        return dict_copy;
     }
 
     /**
@@ -199,12 +222,8 @@ public:
         return sizeof(wavelet_tree)
             - sizeof(bit_vector)
             + m_bit_vector.size_in_bytes()
-            + m_dict.size() * sizeof(uint8_t)
+            + m_sigma * sizeof(uint8_t)
             + m_dict_inv.size() * (sizeof(uint8_t) + sizeof(uint8_t));
-    }
-
-    [[nodiscard]] bool operator==(const std::vector<uint64_t> &v) const {
-        return v == m_bit_vector;
     }
 
 private:
@@ -215,13 +234,17 @@ private:
      * @param chars The set of unique characters in the text.
      */
     void build_tree(std::string &text, const std::set<uint8_t> &chars) {
+        if (m_dict != nullptr) {
+            delete[] m_dict;
+        }
+
         m_sigma = chars.size();
-        m_dict.reserve(m_sigma);
+        m_dict = new uint8_t[m_sigma];
         m_dict_inv.reserve(m_sigma);
 
         uint8_t ci = 0;
         for (const uint8_t &c: chars) {
-            m_dict.push_back(c);
+            m_dict[ci] = c;
             m_dict_inv[c] = ci++;
         }
 
